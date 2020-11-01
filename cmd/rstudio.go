@@ -17,8 +17,11 @@ package cmd
 
 import (
 	"fmt"
-
+	"os"
+    "os/exec"
+    "text/template"
 	"github.com/spf13/cobra"
+    "log"
 )
 
 // rstudioCmd represents the rstudio command
@@ -28,6 +31,7 @@ var rstudioCmd = &cobra.Command{
 	Long: `hpci rstudio spawn application.`,
 	Run: func(cmd *cobra.Command, args []string) {
 		fmt.Println("rstudio called")
+		RunRstudio()
 	},
 }
 
@@ -43,4 +47,51 @@ func init() {
 	// Cobra supports local flags which will only run when this command
 	// is called directly, e.g.:
 	// rstudioCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
+}
+
+// declaring struct 
+type SlurmData struct { 
+    SingularityBin string 
+    SingularityImage string
+    PortRange string
+    UrlDomain string 
+    WorkDir string
+} 
+
+
+// /opt/singularity/bin/singularity
+func RunRstudio() {
+	slurmdata := SlurmData{"/opt/singularity/bin/singularity", "/home/bioinformatics/mmoscatelli/rstudio.simg", "9000-9099","hpc.bioinformatics.itb.cnr.it","R2"}
+	t, err := template.ParseFiles("../templates/slurm-job.sh") 
+
+	check := func(err error) {
+		if err != nil {
+			log.Fatal(err)
+		}
+	}
+
+	tplstruct := SlurmTemplate()
+
+	t, err = template.New("slurm-job").Parse(tplstruct)
+	check(err)
+	// Create the file
+	filename:=RandomString()
+	f, err := os.Create("/tmp/"+filename)
+	check(err)
+
+	err = t.Execute(f, slurmdata)
+	check(err)
+
+	// Close the file when done.
+	f.Close()
+
+    cmd := exec.Command("sbatch","/tmp/"+filename)
+
+    // run command
+    if otuput, err := cmd.Output(); err != nil {
+        fmt.Println( "Error:", err )
+    } else {
+        fmt.Printf( "Output: %s\n", otuput )
+    }
+
 }
