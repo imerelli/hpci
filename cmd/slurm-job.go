@@ -39,8 +39,8 @@ When done using RStudio Server, terminate the job by:
 
 EOF
 
-cd {{.WorkDir}}
-{{.SingularityBin}} exec {{.SingularityImage}} rserver --www-port=${PORT} --auth-none=0  --auth-pam-helper-path=pam-helper 
+
+{{.SingularityBin}} exec --bind {{.WorkDir}}/.Rprofile:/usr/local/lib64/R/etc/Rprofile.site {{.SingularityImage}} rserver --www-port=${PORT} --auth-none=0  --auth-pam-helper-path=pam-helper 
 
 
 printf 'rserver exited' 1>&2

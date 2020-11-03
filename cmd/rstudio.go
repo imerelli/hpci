@@ -61,7 +61,7 @@ type SlurmData struct {
 
 // /opt/singularity/bin/singularity
 func RunRstudio() {
-	slurmdata := SlurmData{"/opt/singularity/bin/singularity", "/home/bioinformatics/mmoscatelli/rstudio.simg", "9000-9099","hpc.bioinformatics.itb.cnr.it","R2"}
+	slurmdata := SlurmData{"/opt/singularity/bin/singularity", "/opt/Rstudio/R.3.6.3.simg", "9000-9099","hpc.bioinformatics.itb.cnr.it","R2"}
 	t, err := template.ParseFiles("../templates/slurm-job.sh") 
 
 	check := func(err error) {
