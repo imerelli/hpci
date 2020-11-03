@@ -1,4 +1,4 @@
-# syntax = docker/dockerfile:1-experimental
+# syntax = docker/dockerfile:experimental
 
 FROM --platform=${BUILDPLATFORM} golang:1.15.2-alpine AS base
 WORKDIR /src
