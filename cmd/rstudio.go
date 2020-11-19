@@ -25,6 +25,8 @@ import (
   homedir "github.com/mitchellh/go-homedir"
 	"github.com/spf13/viper"
 	"path"
+	"io"
+	"bytes"
 )
 
 var rstudioFile string
@@ -120,6 +122,12 @@ func mandatoryConfig() {
 	}
 }
 
+func CheckError(err error) {
+	if err != nil {
+			log.Fatal(err)
+	}
+}
+
 func RunRstudio() {
 	password,_:=RandomHex(20)
 	slurmdata := SlurmData{
@@ -131,47 +139,43 @@ func RunRstudio() {
 		viper.GetString("Rversion"),
 		password}
 
-	check := func(err error) {
-		if err != nil {
-			log.Fatal(err)
-		}
-	}
+
 
 	// Create .Rprofile file
 	t, err := template.New("Rprofile").Parse(ProfileTemplate())
-	check(err)
+	CheckError(err)
 	f, err := os.Create(viper.GetString("project")+"/.Rprofile")
-	check(err)
+	CheckError(err)
 	err = t.Execute(f, slurmdata)
-	check(err)
+	CheckError(err)
 	f.Close()
 		
 	// Create Project.Rproj file
   f, err = os.Create(viper.GetString("project")+"/"+path.Base(viper.GetString("project"))+".Rproj")
-	check(err)
+	CheckError(err)
 	_, err = f.WriteString(ProjectFile())
-	check(err)
+	CheckError(err)
 	f.Close()
 
 	// Create Sbatch file
 	t, err = template.New("slurm-job").Parse(SlurmTemplate())
-	check(err)
-	filename,_:=RandomHex(20)
-	f, err = os.Create("/tmp/"+filename)
-	check(err)
-	err = t.Execute(f, slurmdata)
-	check(err)
+	CheckError(err)
+	var tpl bytes.Buffer
+	err = t.Execute(&tpl, slurmdata)
+	CheckError(err)
 	f.Close()
-  cmd := exec.Command("sbatch","/tmp/"+filename)
 	
-  // run command
-  if otuput, err := cmd.Output(); err != nil {
-    fmt.Println( "Error:", err )
-  } else {
-  	fmt.Printf( "Output: %s\n", otuput )
-  }
+	cmd := exec.Command("sbatch")
+	slurmjob, err := cmd.StdinPipe()
+	CheckError(err)
 
-	err = os.Remove("/tmp/"+filename)
-	check(err)
+	go func() {
+		defer slurmjob.Close()
+		io.WriteString(slurmjob, tpl.String())
+	}()
+
+ otuput, err := cmd.CombinedOutput()
+ CheckError(err)
+ fmt.Printf( "Output: %s\n", otuput )
 
 }
