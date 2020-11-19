@@ -1,11 +1,17 @@
 package cmd
 
 import (
-	"math/rand"
-	"time"
-	"strings"
+  "crypto/rand"
+  "encoding/hex"
 )
 
+func RandomHex(n int) (string, error) {
+  bytes := make([]byte, n)
+  if _, err := rand.Read(bytes); err != nil {
+    return "", err
+  }
+  return hex.EncodeToString(bytes), nil
+}
 
 func SlurmTemplate() string {
 
@@ -16,11 +22,11 @@ func SlurmTemplate() string {
 #SBATCH --job-name=Rstudio
 #SBATCH --cpus-per-task=2
 #SBATCH --mem=8192
-#SBATCH --error={{.WorkDir}}/rstudio-server.%j.err
-#SBATCH --output={{.WorkDir}}/rstudio-server.%j.out
-#SBATCH --partition=p-cpus
+#SBATCH --output={{.PrjDir}}/rstudio-server.%j.out
+#SBATCH --partition=master
 
-export PASSWORD=$(openssl rand -base64 15)
+export PASSWORD={{.Password}}
+export HOMEDIR=$( getent passwd "$USER" | cut -d: -f6 )
 
 PORT=$(shuf -i {{.PortRange}} -n 1)
 cat <<EOF
@@ -39,25 +45,40 @@ When done using RStudio Server, terminate the job by:
 
 EOF
 
-
-{{.SingularityBin}} exec --bind {{.WorkDir}}/.Rprofile:/usr/local/lib64/R/etc/Rprofile.site {{.SingularityImage}} rserver --www-port=${PORT} --auth-none=0  --auth-pam-helper-path=pam-helper 
-
+{{.SingularityBin}} exec -c --bind {{.PrjDir}} --bind {{.PrjDir}}/.Rprofile:${HOMEDIR}/.Rprofile --bind {{.Rversion}} {{.SingularityImage}} rserver --www-port=${PORT} --auth-none=0  --auth-pam-helper-path=pam-helper --rsession-ld-library-path={{.Rversion}}/lib --rsession-which-r={{.Rversion}}/bin/R 
 
 printf 'rserver exited' 1>&2
 `
 	return tpl
 }
 
-func RandomString() string{
-	rand.Seed(time.Now().UnixNano())
-	chars := []rune("ABCDEFGHIJKLMNOPQRSTUVWXYZÅÄÖ" +
-	    "abcdefghijklmnopqrstuvwxyzåäö" +
-	    "0123456789")
-	length := 16
-	var b strings.Builder
-	for i := 0; i < length; i++ {
-	    b.WriteRune(chars[rand.Intn(len(chars))])
-	}
-	str := b.String()
-	return str
+func ProfileTemplate() string {
+  const tpl =`setHook("rstudio.sessionInit", function(newSession) {
+  if (newSession && is.null(rstudioapi::getActiveProject()))
+    rstudioapi::openProject("{{.PrjDir}}/")
+}, action = "append")
+`
+  
+  return tpl
 }
+
+
+func ProjectFile() string {
+  
+  const tpl =`Version: 1.0
+
+RestoreWorkspace: Default
+SaveWorkspace: Default
+AlwaysSaveHistory: Default
+
+EnableCodeIndexing: Yes
+UseSpacesForTab: Yes
+NumSpacesForTab: 2
+Encoding: UTF-8
+
+RnwWeave: Sweave
+LaTeX: pdfLaTeX`
+  
+  return tpl
+}
+
