@@ -1,5 +1,5 @@
 /*
-Copyright © 2020 NAME HERE <EMAIL ADDRESS>
+Copyright © 2020 Marco Moscatelli  <marco.moscatelli@itb.cnr.it>
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -64,6 +64,14 @@ var rootCmd = &cobra.Command{
 	Use:   "hpci",
 	Short: "High Performance Computing Interface",
 	Long: `High Performance Computing Interface to spawn Singularity Application on HPC`,
+	Version: `1.5
+	
+Copyright © 2020 Istituto di Tecnologie Biomediche - Consiglio Nazionale delle Ricerche
+Licensed under the Apache License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0) 
+					
+Written by Marco Moscatelli <marco.moscatelli@itb.cnr.it> 
+Revised and Tested by Matteo Gnocchi and Ivan Merelli`,
+	
 	// Uncomment the following line if your bare application
 	// has an action associated with it:
 	//Run: func(cmd *cobra.Command, args []string) {},
@@ -80,7 +88,6 @@ func Execute() {
 
 func init() {
 	cobra.OnInitialize(initConfig)
-
 	// Here you will define your flags and configuration settings.
 	// Cobra supports persistent flags, which, if defined here,
 	// will be global for your application.
