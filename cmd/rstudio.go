@@ -18,30 +18,37 @@ package cmd
 import (
 	"fmt"
 	"os"
-  "os/exec"
+  "path/filepath"
   "text/template"
 	"github.com/spf13/cobra"
   "log"
   homedir "github.com/mitchellh/go-homedir"
 	"github.com/spf13/viper"
 	"path"
+	"strings"
+  "os/exec"
 	"io"
 	"bytes"
 )
 
-var rstudioFile string
-var Rversion string
-var project string
+var cfgRstudio = viper.New()
+var cfgRstudioFile string
+
+type Rstudio struct {
+	Rversion string `mapstructure:"rversion"`
+	Project string `mapstructure:"project"`
+	Directory []string `mapstructure:"directory"`
+	ExtraBind string `mapstructure:"extrabind"`
+	HomeDirectory string `mapstructure:"homedirectory"`
+}
+
+var RstudioCfg Rstudio
 
 // declaring struct 
 type SlurmData struct { 
-    SingularityBin string 
-    SingularityImage string
-    PortRange string
-    UrlDomain string 
-    PrjDir string
-    Rversion string
     Password string
+    GeneralConf GeneralConfig
+    RstudioConf Rstudio
 } 
 
 // rstudioCmd represents the rstudio command
@@ -50,7 +57,7 @@ var rstudioCmd = &cobra.Command{
 	Short: "hpci rstudio spawn application",
 	Long: `hpci rstudio spawn application.`,
 	Run: func(cmd *cobra.Command, args []string) {
-		mandatoryConfig()
+		// mandatoryConfig()
 		RunRstudio()
 	},
 }
@@ -68,45 +75,55 @@ func init() {
 	// is called directly, e.g.:
 	// rstudioCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
 
-	rstudioCmd.Flags().StringVarP(&rstudioFile, "file", "f", "", "config file (default is $HOME/.hpci-rstudio.yaml)")
-	rstudioCmd.Flags().StringVarP(&Rversion, "Rversion", "r", "", "path to R (absolute path)")
-	viper.BindPFlag("Rversion", rstudioCmd.Flags().Lookup("Rversion"))
-	rstudioCmd.Flags().StringVarP(&project,"project", "p", "", "project directory (absolute path)")
-	viper.BindPFlag("project", rstudioCmd.Flags().Lookup("project"))
+	rstudioCmd.Flags().StringVarP(&cfgRstudioFile, "file", "f", "", "config file (default is $HOME/.hpci-rstudio.yaml)")
+	rstudioCmd.Flags().StringVarP(&RstudioCfg.Rversion, "Rversion", "r", "", "path to R (absolute path)")
+	cfgRstudio.BindPFlag("Rversion", rstudioCmd.Flags().Lookup("Rversion"))
+	rstudioCmd.Flags().StringVarP(&RstudioCfg.Project,"project", "p", "", "project directory (absolute path)")
+	cfgRstudio.BindPFlag("project", rstudioCmd.Flags().Lookup("project"))
+	rstudioCmd.Flags().StringSliceVarP(&RstudioCfg.Directory,"directory", "d", []string{}, "add extra directory as  (absolute path separate with comma or repeat flag)")
+	cfgRstudio.BindPFlag("directory", rstudioCmd.Flags().Lookup("directory"))
 }
 
 // initRstudio reads in config file 
 func initRstudio() {
-	if rstudioFile != "" {
+	cfgGeneral.SetDefault("rstudio.job.cpus", 10)
+	if cfgRstudioFile != "" {
 		// Use config file from the flag.
-		viper.SetConfigFile(rstudioFile)
+		cfgRstudio.SetConfigFile(cfgRstudioFile)
 	} else {
 		// Find home directory.
 		home, err := homedir.Dir()
 		if err != nil {
 			fmt.Println(err)
 			os.Exit(1)
-		}
-
-		// Search config in home directory with name ".hpci" (without extension).
-		viper.AddConfigPath(home)
-		viper.SetConfigName(".hpci-rstudio")
 	}
-
-	viper.AutomaticEnv() // read in environment variables that match
+		
+		// Search config in home directory with name ".hpci" (without extension).
+		cfgRstudio.AddConfigPath(home)
+		cfgRstudio.SetConfigName(".hpci-rstudio")
+	}
 
 	// If a config file is found, read it in.
-	if err := viper.MergeInConfig(); err == nil {
-		fmt.Println("Using config file:", viper.ConfigFileUsed())
+	if err := cfgRstudio.ReadInConfig(); err == nil {
+		fmt.Println("Using config file:", cfgRstudio.ConfigFileUsed())
+	} 
+	if err := cfgRstudio.Unmarshal(&RstudioCfg); err != nil {
+		log.Fatalf("Error reading config file, %s", err)
 	}
+	home, err := homedir.Dir()
+		if err != nil {
+			fmt.Println(err)
+			os.Exit(1)
+	}
+	RstudioCfg.HomeDirectory = home
 }
 
 func mandatoryConfig() {
 	var mandatory []string
 
 	// Administrator  Values
-	if !viper.IsSet("SingularityBin") {mandatory = append(mandatory, "Singularity Bin Path")}
-	if !viper.IsSet("RstudioImage") {mandatory = append(mandatory, "Rstudio image")}
+	if !cfgGeneral.IsSet("singularity.binary") {mandatory = append(mandatory, "Singularity Bin Path")}
+	if !cfgGeneral.IsSet("rstudio.sif") {mandatory = append(mandatory, "Rstudio image")}
 	if mandatory != nil {
 		fmt.Println("ERROR: The following value are mandatory: ",mandatory)
 		fmt.Println("       sudo permissions are needed to edit /etc/hpci/hpci.conf file")
@@ -114,11 +131,16 @@ func mandatoryConfig() {
 	}
 	
 	// Program Values
-	if !viper.IsSet("Rversion") {mandatory = append(mandatory, "Rversion")}
-	if !viper.IsSet("project") {mandatory = append(mandatory, "project")}
+	if !cfgRstudio.IsSet("r.version") {mandatory = append(mandatory, "Rversion")}
+	if !cfgRstudio.IsSet("project") {mandatory = append(mandatory, "project")}
 	if mandatory != nil {
 		fmt.Println("ERROR: The following value are mandatory: ",mandatory)
 		os.Exit(1)
+	}
+	_, err := os.Stat(cfgRstudio.GetString("project"))
+		fmt.Println("ERROR: PATH not exist?",err)			
+	if _, err := os.Stat(cfgRstudio.GetString("project")); !os.IsNotExist(err) {
+		fmt.Println("ERROR: PATH not exist",cfgRstudio.GetString("project"))		
 	}
 }
 
@@ -130,33 +152,41 @@ func CheckError(err error) {
 
 func RunRstudio() {
 	password,_:=RandomHex(20)
-	slurmdata := SlurmData{
-		viper.GetString("SingularityBin"),
-		viper.GetString("RstudioImage"),
-		viper.GetString("RstudioPorts"),
-		viper.GetString("ClusterUrl"),
-		viper.GetString("project"),
-		viper.GetString("Rversion"),
-		password}
-
-
-
+	if len(RstudioCfg.Directory) > 0 { RstudioCfg.ExtraBind = "--bind "+strings.Join(RstudioCfg.Directory[:]," --bind ") }
+	slurmdata := SlurmData{password,GeneralCfg,RstudioCfg}
+	
 	// Create .Rprofile file
 	t, err := template.New("Rprofile").Parse(ProfileTemplate())
 	CheckError(err)
-	f, err := os.Create(viper.GetString("project")+"/.Rprofile")
+	f, err := os.Create(cfgRstudio.GetString("project")+"/.Rprofile")
 	CheckError(err)
 	err = t.Execute(f, slurmdata)
 	CheckError(err)
 	f.Close()
 		
 	// Create Project.Rproj file
-  f, err = os.Create(viper.GetString("project")+"/"+path.Base(viper.GetString("project"))+".Rproj")
+  f, err = os.Create(cfgRstudio.GetString("project")+"/"+path.Base(cfgRstudio.GetString("project"))+".Rproj")
 	CheckError(err)
 	_, err = f.WriteString(ProjectFile())
 	CheckError(err)
 	f.Close()
 
+	// Create Slurm Output Directory
+	outPath:= filepath.Join(RstudioCfg.HomeDirectory,GeneralCfg.Rstudio.Job.OutDir)
+	if _, err := os.Stat(outPath); os.IsNotExist(err) {
+    os.Mkdir(outPath, 0755)
+	}
+	
+	// Create .Rprofile file in homedirectory
+	Rprofilepath:=filepath.Join(RstudioCfg.HomeDirectory,".Rprofile")
+	if _, err := os.Stat(Rprofilepath); os.IsNotExist(err) {
+		RprofileFile, err := os.Create(Rprofilepath)
+		if err != nil {
+			log.Fatal(err)
+		}
+		RprofileFile.Close()
+	}
+	
 	// Create Sbatch file
 	t, err = template.New("slurm-job").Parse(SlurmTemplate())
 	CheckError(err)
@@ -164,7 +194,13 @@ func RunRstudio() {
 	err = t.Execute(&tpl, slurmdata)
 	CheckError(err)
 	f.Close()
-	
+
+	// f, err = os.Create("/tmp/slurm.test")
+	// CheckError(err)
+	// err = t.Execute(f, slurmdata)
+	// CheckError(err)
+	// f.Close()
+
 	cmd := exec.Command("sbatch")
 	slurmjob, err := cmd.StdinPipe()
 	CheckError(err)
@@ -174,8 +210,9 @@ func RunRstudio() {
 		io.WriteString(slurmjob, tpl.String())
 	}()
 
- otuput, err := cmd.CombinedOutput()
+ output, err := cmd.CombinedOutput()
  CheckError(err)
- fmt.Printf( "Output: %s\n", otuput )
+ fmt.Printf( "%s", output )
+ fmt.Printf( "Output Job Information: %s\n", outPath )
 
 }

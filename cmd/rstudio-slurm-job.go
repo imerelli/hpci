@@ -14,27 +14,42 @@ func RandomHex(n int) (string, error) {
 }
 
 func SlurmTemplate() string {
-
-	const tpl = `#!/bin/sh
-#SBATCH --time=08:00:00
+	const tpl = `#!/bin/bash
+#SBATCH --time={{.GeneralConf.Rstudio.Job.Time}}
 #SBATCH --signal=USR2
-#SBATCH --ntasks=2
-#SBATCH --job-name=Rstudio
-#SBATCH --cpus-per-task=2
-#SBATCH --mem=8192
-#SBATCH --output={{.PrjDir}}/rstudio-server.%j.out
-#SBATCH --partition=master
+#SBATCH --job-name={{.GeneralConf.Rstudio.Job.Name}}
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task={{.GeneralConf.Rstudio.Job.Cpus}}
+#SBATCH --mem={{.GeneralConf.Rstudio.Job.Memory}}
+#SBATCH --output={{.RstudioConf.HomeDirectory}}/{{.GeneralConf.Rstudio.Job.OutDir}}/{{.GeneralConf.Rstudio.Job.Output}}
+#SBATCH --partition={{.GeneralConf.Rstudio.Job.Partition}}
 
-export PASSWORD={{.Password}}
-export HOMEDIR=$( getent passwd "$USER" | cut -d: -f6 )
+if [[ "{{.GeneralConf.Rstudio.Auth}}" == "password" ]]; then
+  export RSTUDIO_PASSWORD={{.Password}}
+  RSTUDIO_HELPER=rstudio_auth
+elif [[ "{{.GeneralConf.Rstudio.Auth}}" == "ldaps" ]]; then 
+  export LDAP_HOST={{.GeneralConf.Ldaps.Host}}
+  export LDAP_USER_DN={{.GeneralConf.Ldaps.UserDN}}
+  if [[ ! -z "{{.GeneralConf.Ldaps.CAfile}}" ]]; then 
+    export LDAP_CERT_FILE=/ca-certs.crt
+    BIND_CERT="--bind {{.GeneralConf.Ldaps.CAfile}}:/ca-certs.crt"
+  fi
+  RSTUDIO_PASSWORD="ldap credential"
+  RSTUDIO_HELPER=ldap_auth
 
-PORT=$(shuf -i {{.PortRange}} -n 1)
+fi
+
+PORT=$(comm -23 <(seq {{.GeneralConf.Rstudio.Ports.From}} {{.GeneralConf.Rstudio.Ports.To}} | sort) <(ss -Htan | awk '{print $4}' | cut -d':' -f2 | sort -u) | shuf | head -n 1)
+
 cat <<EOF
 Log in to RStudio Server:
 
-   url: $SLURM_NODELIST.{{.UrlDomain}}:${PORT}
+   url: $SLURM_NODELIST.{{.GeneralConf.Cluster.Url}}:${PORT}
+   Rversion: {{.RstudioConf.Rversion}}
+   Project Directory: {{.RstudioConf.Project}} 
+   Extra Directory: {{.RstudioConf.Directory}} 
    user: ${USER}
-   password: ${PASSWORD}
+   password: ${RSTUDIO_PASSWORD}
 
 When done using RStudio Server, terminate the job by:
 
@@ -45,8 +60,7 @@ When done using RStudio Server, terminate the job by:
 
 EOF
 
-{{.SingularityBin}} exec -c --bind {{.PrjDir}} --bind {{.PrjDir}}/.Rprofile:${HOMEDIR}/.Rprofile --bind {{.Rversion}} {{.SingularityImage}} rserver --www-port=${PORT} --auth-none=0  --auth-pam-helper-path=pam-helper --rsession-ld-library-path={{.Rversion}}/lib --rsession-which-r={{.Rversion}}/bin/R 
-
+{{.GeneralConf.Singularity.Binary}} exec -c {{.RstudioConf.ExtraBind}} ${BIND_CERT} --bind {{.RstudioConf.Project}} --bind {{.RstudioConf.Project}}/.Rprofile:{{.RstudioConf.HomeDirectory}}/.Rprofile --bind {{.RstudioConf.HomeDirectory}}/{{.GeneralConf.Rstudio.Job.OutDir}} --bind {{.RstudioConf.Rversion}} {{.GeneralConf.Rstudio.Sif}} rserver --www-port ${PORT} --auth-none 0  --auth-pam-helper ${RSTUDIO_HELPER} --rsession-ld-library-path {{.RstudioConf.Rversion}}/lib --rsession-which-r {{.RstudioConf.Rversion}}/bin/R
 printf 'rserver exited' 1>&2
 `
 	return tpl
@@ -55,7 +69,7 @@ printf 'rserver exited' 1>&2
 func ProfileTemplate() string {
   const tpl =`setHook("rstudio.sessionInit", function(newSession) {
   if (newSession && is.null(rstudioapi::getActiveProject()))
-    rstudioapi::openProject("{{.PrjDir}}/")
+    rstudioapi::openProject("{{.RstudioConf.Project}}/")
 }, action = "append")
 `
   

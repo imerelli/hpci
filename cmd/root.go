@@ -19,10 +19,45 @@ import (
 	"fmt"
 	"github.com/spf13/cobra"
 	"os"
+  "log"
 	"github.com/spf13/viper"
 )
 
-var cfgFile string
+var cfgGeneral = viper.New()
+//var cfgFile string
+
+type GeneralConfig struct {
+	Singularity struct {
+		Binary string `mapstructure:"binary"`
+	} `mapstructure:"singularity"`
+	Cluster struct { 
+		Url string `mapstructure:"url"`
+	} `mapstructure:"cluster"`
+	Ldaps struct {
+		Host string `mapstructure:"host"`
+		UserDN string `mapstructure:"user-dn"`
+		CAfile string `mapstructure:"ca-file"`
+	} `mapstructure:"ldaps"`
+	Rstudio struct {
+		Sif string `mapstructure:"sif"`
+		Ports struct {
+			From string `mapstructure:"from"`
+			To string `mapstructure:"to"`
+		} `mapstructure:"ports"`
+		Auth string `mapstructure:"auth"`
+		Job struct {
+			Name string `mapstructure:"name"`
+			Time string `mapstructure:"time"`
+			Partition string `mapstructure:"partition"`
+			Cpus string `mapstructure:"cpus"`
+			Memory string `mapstructure:"memory"`
+			OutDir string `mapstructure:"outdir"`
+			Output string `mapstructure:"output"`
+		} `mapstructure:"job"`
+	} `mapstructure:"rstudio"`
+}
+
+var GeneralCfg GeneralConfig
 
 // rootCmd represents the base command when called without any subcommands
 var rootCmd = &cobra.Command{
@@ -55,11 +90,15 @@ func init() {
 	// Cobra also supports local flags, which will only run
 	// when this action is called directly.
 	//rootCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
+	
 }
 
 // initConfig reads in config file /etc/hpci/hpci.conf.
 func initConfig() {
-  viper.SetConfigType("yaml")
-	viper.SetConfigFile("/etc/hpci/hpci.conf")
-	viper.ReadInConfig()
+  cfgGeneral.SetConfigType("yaml")
+	cfgGeneral.SetConfigFile("/etc/hpci/hpci.conf")
+	cfgGeneral.ReadInConfig()
+	if err := cfgGeneral.Unmarshal(&GeneralCfg); err != nil {
+		log.Fatalf("Error reading config file, %s", err)
+	}
 }
