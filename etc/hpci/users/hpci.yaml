@@ -1,0 +1,5 @@
+Rversion: /opt/R/3.6.1
+project: /datasets/999/P1
+directory:
+  - dir1
+  - dir2
