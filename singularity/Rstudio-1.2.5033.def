@@ -1,0 +1,53 @@
+BootStrap: docker
+From: centos:8
+
+%labels
+        Maintainer Marco Moscatelli
+        Email marco.moscatelli@itb.cnr.it
+        Version v1.0
+        RStudio_Version 1.2.5033
+        Date 22 Novembre 2020
+%help
+  RStudio Server
+
+%apprun rserver
+  exec rserver "${@}"
+
+%runscript
+  exec rserver "${@}"
+
+%environment
+  export PATH=/usr/lib/rstudio-server/bin:${PATH}
+
+%setup
+  install -Dv \
+    files/rstudio_auth.sh \
+    ${SINGULARITY_ROOTFS}/usr/lib/rstudio-server/bin/rstudio_auth
+  install -Dv \
+    files/ldap_auth.py \
+    ${SINGULARITY_ROOTFS}/usr/lib/rstudio-server/bin/ldap_auth
+
+%post
+  # Software versions
+  export RSTUDIO_VERSION=1.2.5033
+
+  # Install R
+  dnf install -y epel-release 'dnf-command(config-manager)'
+  dnf config-manager --set-enabled PowerTools
+  dnf install -y R
+
+  # Install RStudio Server
+  dnf install -y wget
+  wget --no-verbose -O rstudio-server.rpm https://download2.rstudio.org/server/fedora28/x86_64/rstudio-server-rhel-${RSTUDIO_VERSION}-x86_64.rpm
+  dnf install -y rstudio-server.rpm
+  rm -f rstudio-server.rpm
+
+  # Add support for LDAP authentication
+  dnf install -y python3
+  wget --no-verbose -O get-pip.py "https://bootstrap.pypa.io/get-pip.py"
+  python3 get-pip.py
+  rm -f get-pip.py
+  pip3 install ldap3
+
+  # Clean up
+  dnf clean all
